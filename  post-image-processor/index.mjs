@@ -82,7 +82,6 @@ export const handler = async (event) => {
         input: combinedText,
       });
       const embedding = embeddingResp.data[0].embedding;
-      const embeddingId = uuidv4();
 
       // 5️⃣ Atualiza MongoDB
       await posts.updateOne(
@@ -90,7 +89,6 @@ export const handler = async (event) => {
         {
           $set: {
             status: "processed",
-            embeddingId,
             imageDescription
           },
         }
@@ -100,9 +98,9 @@ export const handler = async (event) => {
       await qdrant.upsert("posts", {
         points: [
           {
-            id: embeddingId,
+            id: uuidv4(),
             vector: embedding,
-            payload: { postId, userId, caption, imageDescription },
+            payload: { postId, userId, caption, imageDescription, createdAt: new Date() },
           },
         ],
       });
