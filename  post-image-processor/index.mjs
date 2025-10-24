@@ -57,7 +57,9 @@ async function processPost(record) {
         {
           role: "user",
           content: [
-            { type: "text", text: "Descreva brevemente o conteúdo e o contexto desta imagem:" },
+            caption
+              ? { type: "text", text: `Descreva brevemente o conteúdo e o contexto desta imagem considerando a seguinte legenda: "${caption}"` }
+              : { type: "text", text: "Descreva brevemente o conteúdo e o contexto desta imagem:" },
             { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } },
           ],
         },
