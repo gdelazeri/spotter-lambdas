@@ -26,93 +26,144 @@ async function downloadImage(bucket, key) {
   return streamToBufferPromise(resp.Body);
 }
 
+const POST_STATUS = {
+  PENDING: "pending",
+  PROCESSED: "processed",
+  CENSORED: "censored",
+  FAILED: "failed",
+}
+
 async function processPost(record) {
   const posts = mongo.db("spotter").collection("posts");
+
+  let postId;
 
   try {
     const bucket = record.s3.bucket.name;
     const key = decodeURIComponent(record.s3.object.key.replace(/\+/g, " "));
-    const postId = key.split("/")[2].split(".")[0]; // posts/<userId>/<postId>.jpg
-  
+    postId = key.split("/")[2].split(".")[0];
+
     const post = await posts.findOne({ _id: new ObjectId(postId) });
     if (!post) {
       console.warn(`Post ${postId} not found.`);
       return;
     }
-  
+
     const { userId, caption = "" } = post;
-  
+
     // 1️⃣ Baixa imagem
     const imageBuffer = await downloadImage(bucket, key);
     const base64Image = imageBuffer.toString("base64");
-  
-    // 2️⃣ Usa GPT-4o-mini (multimodal) para gerar descrição da imagem
+
+    // 2️⃣ Descrição da imagem (multimodal)
     const visionResponse = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // modelo multimodal leve e barato
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
-          content: "Você é um assistente que descreve imagens de forma objetiva e detalhada.",
+          content: "Você descreve imagens de forma objetiva e identifica possíveis conteúdos sensíveis.",
         },
         {
           role: "user",
           content: [
-            caption
-              ? { type: "text", text: `Descreva brevemente o conteúdo e o contexto desta imagem considerando a seguinte legenda: "${caption}"` }
-              : { type: "text", text: "Descreva brevemente o conteúdo e o contexto desta imagem:" },
-            { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } },
+            {
+              type: "text",
+              text: caption
+                ? `Descreva a imagem considerando esta legenda: "${caption}". Aponte se há nudez, violência ou conteúdo sexual.`
+                : "Descreva a imagem e aponte se há nudez, violência ou conteúdo sexual.",
+            },
+            {
+              type: "image_url",
+              image_url: { url: `data:image/jpeg;base64,${base64Image}` },
+            },
           ],
         },
       ],
     });
-  
+
     const imageDescription = visionResponse.choices[0].message.content.trim();
     console.log("Descrição da imagem:", imageDescription);
-  
-    // 3️⃣ Combina legenda + descrição da imagem
-    const combinedText = caption
+
+    // 3️⃣ 🔥 MODERATION API (OFICIAL)
+    const moderationInput = caption
       ? `${caption} ${imageDescription}`.trim()
       : imageDescription;
-  
-    // 4️⃣ Gera embeddings a partir do texto combinado
+
+    const moderationResp = await openai.moderations.create({
+      model: "omni-moderation-latest",
+      input: moderationInput,
+    });
+
+    const moderationResult = moderationResp.results[0];
+
+    if (moderationResult.flagged) {
+      console.warn("Conteúdo sensível detectado:", moderationResult.categories);
+
+      await posts.updateOne(
+        { _id: new ObjectId(postId) },
+        {
+          $set: {
+            status: POST_STATUS.CENSORED,
+            processedAt: Date.now(),
+            moderation: {
+              flagged: true,
+              categories: moderationResult.categories,
+            },
+            imageDescription,
+          },
+        }
+      );
+
+      return;
+    }
+
+    // 4️⃣ Embeddings
     const embeddingResp = await openai.embeddings.create({
       model: "text-embedding-3-small",
-      input: combinedText,
+      input: moderationInput,
     });
+
     const embedding = embeddingResp.data[0].embedding;
-  
-    // 5️⃣ Atualiza MongoDB
+
+    // 5️⃣ Atualiza Mongo
     await posts.updateOne(
       { _id: new ObjectId(postId) },
       {
         $set: {
-          status: "processed",
-          timestamp: Date.now(),
-          imageDescription
+          status: POST_STATUS.PROCESSED,
+          processedAt: Date.now(),
+          imageDescription,
         },
       }
     );
-  
-    // 6️⃣ Upsert no Qdrant
+
+    // 6️⃣ Qdrant
     await qdrant.upsert("posts", {
       points: [
         {
           id: uuidv4(),
           vector: embedding,
-          payload: { postId, userId, caption, imageDescription, createdAt: new Date() },
+          payload: {
+            postId,
+            userId,
+            caption,
+            imageDescription,
+            createdAt: new Date(),
+          },
         },
       ],
     });
-  
+
     console.log(`Post ${postId} processed successfully.`);
-    return true;
   } catch (error) {
     console.error("Error on process post:", error);
-    await posts.updateOne(
-      { _id: new ObjectId(postId) },
-      { $set: { status: "failed" } }
-    );
-    return false;
+
+    if (postId) {
+      await posts.updateOne(
+        { _id: new ObjectId(postId) },
+        { $set: { status: POST_STATUS.FAILED, error: error.message } }
+      );
+    }
   }
 }
 
