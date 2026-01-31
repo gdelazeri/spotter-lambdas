@@ -33,6 +33,8 @@ const POST_STATUS = {
   FAILED: "failed",
 }
 
+const CENSORED_THRESHOLD = 0.3;
+
 async function processPost(record) {
   const posts = mongo.db("spotter").collection("posts");
 
@@ -96,8 +98,9 @@ async function processPost(record) {
 
     const moderationResult = moderationResp.results[0];
 
-    if (moderationResult.flagged) {
-      console.warn("Conteúdo sensível detectado:", moderationResult.categories);
+    const highRiskScore = Object.keys(moderationResult.category_scores).some(category => moderationResult.category_scores[category] > CENSORED_THRESHOLD);
+    if (highRiskScore || moderationResult.flagged) {
+      console.warn("Conteúdo sensível detectado:", moderationResult);
 
       await posts.updateOne(
         { _id: new ObjectId(postId) },
@@ -106,8 +109,9 @@ async function processPost(record) {
             status: POST_STATUS.CENSORED,
             processedAt: Date.now(),
             moderation: {
-              flagged: true,
+              flagged: moderationResult.flagged,
               categories: moderationResult.categories,
+              categoryScores: moderationResult.category_scores,
             },
             imageDescription,
           },
