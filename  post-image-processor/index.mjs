@@ -33,7 +33,7 @@ const POST_STATUS = {
   FAILED: "failed",
 }
 
-const CENSORED_THRESHOLD = 0.3;
+const CENSORED_THRESHOLD = 0.5;
 
 async function processPost(record) {
   const posts = mongo.db("spotter").collection("posts");
@@ -57,6 +57,8 @@ async function processPost(record) {
     const imageBuffer = await downloadImage(bucket, key);
     const base64Image = imageBuffer.toString("base64");
 
+    const moderationPrompt = "Se houver conteúdo sensível na imagem, como nudez, violência ou conteúdo sexual, descreeva."
+
     // 2️⃣ Descrição da imagem (multimodal)
     const visionResponse = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -71,8 +73,8 @@ async function processPost(record) {
             {
               type: "text",
               text: caption
-                ? `Descreva a imagem considerando esta legenda: "${caption}". Aponte se há nudez, violência ou conteúdo sexual.`
-                : "Descreva a imagem e aponte se há nudez, violência ou conteúdo sexual.",
+                ? `Descreva a imagem considerando esta legenda: "${caption}". ${moderationPrompt}`
+                : moderationPrompt,
             },
             {
               type: "image_url",
