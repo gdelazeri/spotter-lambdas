@@ -11,6 +11,8 @@ const mongo = new MongoClient(process.env.MONGO_URI);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_KEY });
 const qdrant = new QdrantClient({ url: process.env.QDRANT_URL, apiKey: process.env.QDRANT_API_KEY });
 
+const THUMBNAIL_QUALITY = 20;
+
 // Utilitário: converte stream em buffer
 function streamToBufferPromise(stream) {
   return new Promise((resolve, reject) => {
@@ -70,7 +72,7 @@ async function processPost(record) {
     // Gerar thumbnail
     const thumbnail = await sharp(imageBuffer)
       .rotate()
-      .webp({ quality: 30 })
+      .webp({ quality: THUMBNAIL_QUALITY })
       .toBuffer();
 
     const basePath = key.replace(".jpg", "");
