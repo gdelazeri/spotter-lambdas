@@ -1,10 +1,9 @@
 // lambda/imageProcessor.js
-import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { MongoClient, ObjectId } from "mongodb";
 import OpenAI from "openai";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { v4 as uuidv4 } from "uuid";
-import sharp from "sharp";
 
 const s3 = new S3Client({ region: process.env.AWS_REGION });
 const mongo = new MongoClient(process.env.MONGO_URI);
@@ -25,18 +24,6 @@ function streamToBufferPromise(stream) {
 async function downloadImage(bucket, key) {
   const resp = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
   return streamToBufferPromise(resp.Body);
-}
-
-async function upload(bucket, key, body) {
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      Body: body,
-      ContentType: "image/webp",
-      CacheControl: "public, max-age=31536000, immutable",
-    })
-  );
 }
 
 const POST_STATUS = {
@@ -64,20 +51,10 @@ async function processPost(record) {
       return;
     }
 
-    // 1️⃣ Baixa imagem
-    const imageBuffer = await downloadImage(bucket, key);
-
-    // Gerar thumbnail
-    const thumbnail = await sharp(imageBuffer)
-      .rotate()
-      .webp({ quality: 30 })
-      .toBuffer();
-
-    const basePath = key.replace(".jpg", "");
-    await upload(bucket, `${basePath}-thumbnail.webp`, thumbnail)
-
     const { userId, caption = "" } = post;
 
+    // 1️⃣ Baixa imagem
+    const imageBuffer = await downloadImage(bucket, key);
     const base64Image = imageBuffer.toString("base64");
 
     const moderationPrompt = "Se houver conteúdo sensível na imagem, como nudez, violência ou conteúdo sexual, descreeva."
