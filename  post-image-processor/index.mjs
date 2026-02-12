@@ -74,9 +74,12 @@ async function processPost(record) {
       .rotate()
       .webp({ quality: THUMBNAIL_QUALITY })
       .toBuffer();
-
+    console.log('Thumbnail generated successfully');
+    
     const basePath = key.replace(".jpg", "");
-    await upload(bucket, `${basePath}-thumbnail.webp`, thumbnail)
+    const thumbnailPath = `${basePath}-thumbnail.webp`
+    await upload(bucket, thumbnailPath, thumbnail)
+    console.log('Thumbnail uploaded successfully', thumbnailPath);
 
     const { userId, caption = "" } = post;
 
