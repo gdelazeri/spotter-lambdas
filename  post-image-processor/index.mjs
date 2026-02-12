@@ -82,7 +82,7 @@ async function processPost(record) {
 
     const base64Image = imageBuffer.toString("base64");
 
-    const moderationPrompt = "Se houver conteúdo sensível na imagem, como nudez, violência ou conteúdo sexual, descreeva."
+    const moderationPrompt = "Se houver conteúdo sensível na imagem, como nudez, violência ou conteúdo sexual, descreeva. Se não houver nada sensível, apenas descreva a imagem de forma objetiva.";
 
     // 2️⃣ Descrição da imagem (multimodal)
     const visionResponse = await openai.chat.completions.create({
