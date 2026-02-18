@@ -60,7 +60,7 @@ async function processPost(record) {
     const key = decodeURIComponent(record.s3.object.key.replace(/\+/g, " "));
     postId = key.split("/")[2].split(".")[0];
 
-    const post = await posts.findOne({ _id: new ObjectId(postId) });
+    const post = await posts.findOne({ _id: new ObjectId(postId), status: POST_STATUS.PENDING, deletedAt: { $exists: false } });
     if (!post) {
       console.warn(`Post ${postId} not found.`);
       return;
@@ -161,7 +161,7 @@ async function processPost(record) {
 
     // 5️⃣ Atualiza Mongo
     await posts.updateOne(
-      { _id: new ObjectId(postId) },
+      { _id: new ObjectId(postId), status: POST_STATUS.PENDING, deletedAt: { $exists: false } },
       {
         $set: {
           status: POST_STATUS.PROCESSED,
